@@ -81,7 +81,7 @@ biarkan sebagai teks satu baris dengan `\n` literal seperti itu, kode aplikasi y
 Untuk tiap user, jalankan:
 
 ```bash
-npm run hash-password -- "m0oMoo.,15126"
+npm run hash-password -- "password"
 ```
 
 Copy hasilnya (dimulai dengan `$2a$...`) ke `USER1_PASSWORD_HASH` atau `USER2_PASSWORD_HASH` di `.env.local`.
