@@ -59,6 +59,16 @@ export async function getReportData() {
       jenis: r[jenisH],
     }));
 
+  // Semua transaksi dalam bentuk sederhana — dipakai misalnya untuk modal
+  // detail laporan harian (filter per tanggal di sisi client).
+  const transactions = rows.map((r) => ({
+    tanggal: tanggalH ? String(r[tanggalH] ?? "").trim() : "",
+    nama: namaH ? r[namaH] : "",
+    keterangan: ketH ? r[ketH] : "",
+    nominal: Number(r[nominalH]) || 0,
+    jenis: r[jenisH],
+  }));
+
   return {
     saldo: saldoAkhir,
     todayIncome,
@@ -69,5 +79,6 @@ export async function getReportData() {
       outcome: d.outcome,
     })),
     recent,
+    transactions,
   };
 }

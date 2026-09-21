@@ -8,6 +8,8 @@ import {
 } from "./googleSheets";
 import { parseIndonesianDate } from "./format";
 
+import { appendMissingHeaders } from "./googleSheets";
+
 const SHEET_PEMBUKUAN = process.env.SHEET_TAB_PEMBUKUAN || "Pembukuan";
 const SHEET_DAILY = process.env.SHEET_TAB_DAILY_REPORT || "Daily Report";
 
@@ -18,7 +20,10 @@ const DAILY_HEADERS = [
   "Selisih Bersih",
   "Saldo Akhir",
   "Jumlah Transaksi",
+  "Notes",
 ];
+
+const NOTES_HEADER = "Notes";
 
 function sameDate(a, b) {
   return (
@@ -45,7 +50,12 @@ export async function upsertDailyReport(targetDate) {
   target.setHours(0, 0, 0, 0);
 
   await ensureSheetExists(SHEET_DAILY);
-  const dailyHeaders = await ensureHeaders(SHEET_DAILY, DAILY_HEADERS);
+  let dailyHeaders = await ensureHeaders(SHEET_DAILY, DAILY_HEADERS);
+
+  // Kolom Notes dibuat otomatis di sheet yang sudah terisi data.
+  if (!dailyHeaders.includes(NOTES_HEADER)) {
+    dailyHeaders = await appendMissingHeaders(SHEET_DAILY, dailyHeaders, [NOTES_HEADER]);
+  }
 
   const { headers: pHeaders, rows: pRows } = await readSheet(SHEET_PEMBUKUAN);
   const tanggalH = matchHeader(pHeaders, "TANGGAL");
@@ -97,12 +107,54 @@ export async function upsertDailyReport(targetDate) {
   );
 
   if (existing) {
+    // Pertahankan notes yang sudah ditulis — re-sync tidak boleh menghapusnya.
+    dataObj[NOTES_HEADER] = existing[NOTES_HEADER] ?? "";
     await updateRow(SHEET_DAILY, existing._row, dailyHeaders, dataObj);
   } else {
     await appendRow(SHEET_DAILY, dailyHeaders, dataObj);
   }
 
   return dataObj;
+}
+
+// Menyimpan (atau mengubah) notes untuk tanggal tertentu. Pesanan tanggal
+// yang belum punya baris di Daily Report akan dibuatkan barisnya dulu.
+export async function saveDailyNote(targetDate, note) {
+  const target = new Date(targetDate);
+  target.setHours(0, 0, 0, 0);
+
+  await ensureSheetExists(SHEET_DAILY);
+  let dailyHeaders = await ensureHeaders(SHEET_DAILY, DAILY_HEADERS);
+  if (!dailyHeaders.includes(NOTES_HEADER)) {
+    dailyHeaders = await appendMissingHeaders(SHEET_DAILY, dailyHeaders, [NOTES_HEADER]);
+  }
+
+  const { rows: existingRows } = await readSheet(SHEET_DAILY);
+  const tanggalHeaderDaily = matchHeader(dailyHeaders, "TANGGAL") || "Tanggal";
+  const existing = existingRows.find((r) =>
+    sameDate(parseIndonesianDate(r[tanggalHeaderDaily]), target)
+  );
+
+  if (existing) {
+    await updateRow(SHEET_DAILY, existing._row, dailyHeaders, {
+      [NOTES_HEADER]: note,
+    });
+    return { date: toIndonesianDateString(target), created: false };
+  }
+
+  // Belum ada baris untuk tanggal itu: buat ringkasan dulu (transaksi mungkin
+  // kosong), lalu isi notes-nya.
+  await upsertDailyReport(target);
+  const { rows: refreshed } = await readSheet(SHEET_DAILY);
+  const created = refreshed.find((r) =>
+    sameDate(parseIndonesianDate(r[tanggalHeaderDaily]), target)
+  );
+  if (created) {
+    await updateRow(SHEET_DAILY, created._row, dailyHeaders, {
+      [NOTES_HEADER]: note,
+    });
+  }
+  return { date: toIndonesianDateString(target), created: true };
 }
 
 // Mengisi ulang seluruh riwayat: mengambil semua tanggal unik yang pernah
