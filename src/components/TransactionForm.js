@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatRupiah } from "@/lib/format";
+import { formatRupiah, todayIso } from "@/lib/format";
+import DateField from "./DateField";
 
 export default function TransactionForm({ currentSaldo }) {
   const router = useRouter();
+  const [tanggal, setTanggal] = useState(todayIso());
   const [nama, setNama] = useState("");
   const [keterangan, setKeterangan] = useState("");
   const [nominal, setNominal] = useState("");
@@ -30,6 +32,7 @@ export default function TransactionForm({ currentSaldo }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          tanggal,
           nama,
           keterangan,
           nominal: Number(nominal),
@@ -44,6 +47,7 @@ export default function TransactionForm({ currentSaldo }) {
       setKeterangan("");
       setNominal("");
       setNotes("");
+      setTanggal(todayIso());
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -69,6 +73,7 @@ export default function TransactionForm({ currentSaldo }) {
         </button>
       ) : (
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <DateField label="Tanggal" value={tanggal} onChange={setTanggal} required />
           <div className="flex gap-2">
             <button
               type="button"

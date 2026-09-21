@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { readSheet, appendRow, matchHeader } from "@/lib/googleSheets";
-import { todayIndonesian } from "@/lib/format";
+import { todayIndonesian, isoToIndonesian, parseIndonesianDate } from "@/lib/format";
+import { upsertDailyReport } from "@/lib/dailyReport";
 
 const SHEET = process.env.SHEET_TAB_PEMBUKUAN || "Pembukuan";
 
@@ -27,7 +28,12 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
-    const { nama, keterangan, nominal, jenis, notes } = body;
+    const { tanggal, nama, keterangan, nominal, jenis, notes } = body;
+
+    // `tanggal` datang dari <input type="date"> dengan format "yyyy-mm-dd".
+    // Diubah ke "dd/mm/yyyy" biar konsisten dengan format tanggal di sheet.
+    // Kalau tidak dikirim (mis. dari sumber lain), fallback ke hari ini.
+    const tanggalStr = tanggal ? isoToIndonesian(tanggal) : todayIndonesian();
 
     if (!nominal || Number(nominal) <= 0) {
       return NextResponse.json(
@@ -61,7 +67,7 @@ export async function POST(req) {
     const notesHeader = matchHeader(headers, "NOTES");
 
     const dataObj = {};
-    if (tanggalHeader) dataObj[tanggalHeader] = todayIndonesian();
+    if (tanggalHeader) dataObj[tanggalHeader] = tanggalStr;
     if (namaHeader) dataObj[namaHeader] = nama || session.user.name;
     if (ketHeader) dataObj[ketHeader] = keterangan || "";
     if (nominalHeader) dataObj[nominalHeader] = nominalNum;
@@ -71,7 +77,17 @@ export async function POST(req) {
 
     await appendRow(SHEET, headers, dataObj);
 
-    return NextResponse.json({ success: true, saldo: newSaldo });
+    // Sinkronkan ringkasan HARI TRANSAKSI INI (bukan selalu hari ini —
+    // penting kalau transaksinya sengaja dicatat mundur/maju).
+    let dailyReportWarning = null;
+    try {
+      const tanggalTransaksi = parseIndonesianDate(tanggalStr) || new Date();
+      await upsertDailyReport(tanggalTransaksi);
+    } catch (syncErr) {
+      dailyReportWarning = syncErr.message;
+    }
+
+    return NextResponse.json({ success: true, saldo: newSaldo, dailyReportWarning });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

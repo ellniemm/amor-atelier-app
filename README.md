@@ -7,6 +7,7 @@ Dibuat dengan Next.js, siap deploy ke Vercel.
 ## Fitur
 
 - **Ringkasan (Daily Report):** saldo saat ini, pemasukan/pengeluaran hari ini, grafik 7 hari terakhir, transaksi terbaru.
+- **Daily Report ke Google Sheets:** setiap kali ada transaksi baru di Pembukuan, ringkasan hari itu (total masuk, total keluar, selisih, saldo akhir, jumlah transaksi) otomatis tersimpan/diperbarui ke tab **"Daily Report"** di spreadsheet kamu. Tab ini dibuat otomatis kalau belum ada. Ada juga tombol "Isi riwayat lama" untuk mengisi hari-hari sebelum fitur ini aktif, berdasarkan transaksi yang sudah ada di Pembukuan.
 - **Pembukuan:** catat transaksi baru (Income/Outcome), saldo terhitung otomatis, langsung tersimpan ke tab `Pembukuan` di Google Sheets kamu.
 - **Order List:** tambah & lihat pesanan, form otomatis menyesuaikan kolom apa pun yang ada di tab `Order List` kamu.
 - **Login untuk 2 orang** (kamu & partner), masing-masing dengan username/password sendiri.
@@ -43,6 +44,7 @@ Ini supaya aplikasi bisa baca/tulis ke Google Sheets kamu tanpa perlu login Goog
 - Tab **Pembukuan** harus punya baris header (baris 1) dengan nama-nama kolom seperti: `Tanggal`, `Nama`, `Keterangan`, `Nominal`, `Jenis`, `Saldo`, `Notes`.
   Nilai kolom **Jenis** harus persis `Income` atau `Outcome`. Urutan kolom bebas, aplikasi mencocokkan berdasarkan nama header (case-insensitive), bukan posisi kolom.
 - Tab **Order List** bebas kolomnya apa saja — form pesanan di web otomatis menyesuaikan.
+- Tab **Daily Report** tidak perlu kamu buat manual — aplikasi akan membuatnya sendiri (beserta header-nya) begitu transaksi pertama dicatat, atau begitu kamu klik "Isi riwayat lama" / "Sinkronkan hari ini" di halaman Ringkasan.
 
 ### 4. Setup project di komputer kamu
 
@@ -81,7 +83,7 @@ biarkan sebagai teks satu baris dengan `\n` literal seperti itu, kode aplikasi y
 Untuk tiap user, jalankan:
 
 ```bash
-npm run hash-password -- "password"
+npm run hash-password -- "password-pilihan-kamu"
 ```
 
 Copy hasilnya (dimulai dengan `$2a$...`) ke `USER1_PASSWORD_HASH` atau `USER2_PASSWORD_HASH` di `.env.local`.
@@ -127,13 +129,15 @@ src/
       orders/          → catat & lihat pesanan
     api/
       auth/            → NextAuth (login)
-      pembukuan/       → GET & POST ke tab Pembukuan
+      pembukuan/       → GET & POST ke tab Pembukuan (juga trigger sync Daily Report)
       orders/          → GET & POST ke tab Order List
-      report/          → data agregat untuk Ringkasan
+      report/          → data agregat untuk Ringkasan (saldo, grafik mingguan)
+      daily-report/    → GET riwayat + POST untuk sinkron manual/backfill
   lib/
     googleSheets.js    → semua interaksi ke Google Sheets API
     auth.js            → konfigurasi login (2 user)
-    reportData.js       → logika agregasi laporan harian/mingguan
+    reportData.js      → logika agregasi laporan harian/mingguan (untuk tampilan)
+    dailyReport.js     → logika upsert & backfill ke tab Daily Report
 ```
 
 ## Catatan keamanan

@@ -16,6 +16,24 @@ export function todayIndonesian() {
   });
 }
 
+// Nilai dari <input type="date"> selalu berformat "yyyy-mm-dd".
+// Fungsi ini mengubahnya ke "dd/mm/yyyy" (format yang dipakai di sheet kamu).
+export function isoToIndonesian(isoStr) {
+  if (!isoStr) return "";
+  const [y, m, d] = isoStr.split("-");
+  if (!y || !m || !d) return "";
+  return `${d}/${m}/${y}`;
+}
+
+// Kebalikannya: dipakai untuk mengisi nilai AWAL date picker (defaultnya hari ini).
+export function todayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // Mencoba mem-parse tanggal dari berbagai format yang mungkin muncul
 // di Google Sheets (dd/mm/yyyy, yyyy-mm-dd, atau format lain).
 export function parseIndonesianDate(str) {

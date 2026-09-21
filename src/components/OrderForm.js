@@ -2,6 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isoToIndonesian } from "@/lib/format";
+import DateField from "./DateField";
+
+// Kalau nama kolomnya mengandung kata "tanggal" atau "date", kita anggap
+// itu kolom tanggal dan tampilkan date picker, bukan input teks biasa.
+function isDateHeader(h) {
+  const lower = h.toLowerCase();
+  return lower.includes("tanggal") || lower.includes("date");
+}
 
 export default function OrderForm({ headers }) {
   const router = useRouter();
@@ -19,10 +28,19 @@ export default function OrderForm({ headers }) {
     setError("");
     setLoading(true);
     try {
+      // Kolom yang terdeteksi sebagai tanggal disimpan sementara dalam
+      // format "yyyy-mm-dd" (bawaan date picker) — diubah dulu ke
+      // "dd/mm/yyyy" sebelum dikirim, biar konsisten dengan Pembukuan.
+      const payloadValues = {};
+      headers.forEach((h) => {
+        const raw = values[h] || "";
+        payloadValues[h] = isDateHeader(h) && raw ? isoToIndonesian(raw) : raw;
+      });
+
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values }),
+        body: JSON.stringify({ values: payloadValues }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal menyimpan.");
@@ -56,16 +74,25 @@ export default function OrderForm({ headers }) {
         </button>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-3">
-          {headers.map((h) => (
-            <input
-              key={h}
-              type="text"
-              placeholder={h}
-              value={values[h] || ""}
-              onChange={(e) => updateField(h, e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2.5 text-sm focus:outline-none focus:border-wine"
-            />
-          ))}
+          {headers.map((h) =>
+            isDateHeader(h) ? (
+              <DateField
+                key={h}
+                label={h}
+                value={values[h] || ""}
+                onChange={(v) => updateField(h, v)}
+              />
+            ) : (
+              <input
+                key={h}
+                type="text"
+                placeholder={h}
+                value={values[h] || ""}
+                onChange={(e) => updateField(h, e.target.value)}
+                className="w-full rounded-lg border border-line px-3 py-2.5 text-sm focus:outline-none focus:border-wine"
+              />
+            )
+          )}
 
           {error && <p className="text-xs text-outcome">{error}</p>}
 

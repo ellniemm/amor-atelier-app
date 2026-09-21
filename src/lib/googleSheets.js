@@ -96,3 +96,80 @@ export function matchHeader(headers, key) {
   }
   return null;
 }
+
+function colLetter(index) {
+  let letter = "";
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
+// Menimpa satu baris yang sudah ada (dipakai untuk "upsert" laporan harian:
+// kalau baris untuk tanggal tsb sudah ada, di-update, bukan ditambah baris baru).
+// `rowNumber` adalah nomor baris asli di sheet (lihat properti `_row` dari readSheet).
+export async function updateRow(sheetName, rowNumber, headers, dataObj) {
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+
+  const row = headers.map((h) => {
+    const val = dataObj[h];
+    return val === undefined || val === null ? "" : val;
+  });
+
+  const endCol = colLetter(headers.length - 1);
+  const range = `${sheetName}!A${rowNumber}:${endCol}${rowNumber}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [row] },
+  });
+}
+
+// Memastikan sebuah tab/sheet dengan nama tsb ada di spreadsheet.
+// Kalau belum ada, otomatis dibuatkan (tab kosong).
+export async function ensureSheetExists(sheetName) {
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const titles = (meta.data.sheets || []).map((s) => s.properties.title);
+
+  if (!titles.includes(sheetName)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
+      },
+    });
+  }
+}
+
+// Memastikan baris header (baris 1) sudah ada. Kalau sheet masih kosong,
+// akan diisi otomatis dengan `desiredHeaders`. Mengembalikan header yang
+// dipakai (yang sudah ada, atau yang baru saja ditulis).
+export async function ensureHeaders(sheetName, desiredHeaders) {
+  const { headers } = await readSheet(sheetName);
+  if (headers.length > 0) return headers;
+
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const endCol = colLetter(desiredHeaders.length - 1);
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A1:${endCol}1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [desiredHeaders] },
+  });
+
+  return desiredHeaders;
+}

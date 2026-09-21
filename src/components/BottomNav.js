@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, BookOpen, ClipboardList } from "lucide-react";
+import { LayoutGrid, BookOpen, ClipboardList, FileSpreadsheet } from "lucide-react";
 
 const items = [
   { href: "/dashboard", label: "Ringkasan", icon: LayoutGrid },
   { href: "/pembukuan", label: "Pembukuan", icon: BookOpen },
   { href: "/orders", label: "Pesanan", icon: ClipboardList },
+  { href: "/daily-report", label: "Laporan", icon: FileSpreadsheet },
 ];
 
 export default function BottomNav() {
