@@ -34,6 +34,36 @@ export function todayIso() {
   return `${y}-${m}-${day}`;
 }
 
+// Mengubah tanggal dari sheet ("dd/mm/yyyy", "yyyy-mm-dd", atau "yyyy/mm/dd")
+// ke format "yyyy-mm-dd" untuk mengisi nilai awal <input type="date">.
+// Mengembalikan string kosong kalau formatnya tidak dikenali.
+export function indonesianToIso(str) {
+  if (!str) return "";
+  const raw = String(str).trim();
+
+  let m = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  m = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (m) {
+    const [, d, mo, y] = m;
+    return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return "";
+}
+
+// Menggabungkan dua nilai <input type="time"> ("HH:MM") menjadi satu string
+// "HH:MM - HH:MM" untuk disimpan ke satu kolom di sheet. Kalau salah satu
+// kosong, bagian yang kosong dilewati.
+export function combineTimeRange(from, to) {
+  const f = (from || "").trim();
+  const t = (to || "").trim();
+  if (f && t) return `${f} - ${t}`;
+  return f || t || "";
+}
+
 // Mencoba mem-parse tanggal dari berbagai format yang mungkin muncul
 // di Google Sheets (dd/mm/yyyy, yyyy-mm-dd, atau format lain).
 export function parseIndonesianDate(str) {

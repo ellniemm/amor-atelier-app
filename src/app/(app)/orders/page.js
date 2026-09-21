@@ -28,7 +28,7 @@ export default async function OrdersPage() {
 
   return (
     <div className="mt-2 space-y-6">
-      <OrderForm headers={headers} />
+      <OrderForm headers={headers} rows={rows} />
       <OrderList headers={headers} rows={[...rows].reverse()} />
     </div>
   );

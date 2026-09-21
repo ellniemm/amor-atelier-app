@@ -173,3 +173,40 @@ export async function ensureHeaders(sheetName, desiredHeaders) {
 
   return desiredHeaders;
 }
+
+// Menambahkan header yang belum ada ke ujung kanan baris 1 (tanpa menimpa
+// yang sudah ada). Dipakai misalnya untuk menambah kolom "Editing Since"
+// pada sheet Order yang sudah terisi data.
+export async function appendMissingHeaders(sheetName, headers, missing) {
+  const toAdd = missing.filter((h) => !headers.includes(h));
+  if (toAdd.length === 0) return headers;
+
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const startCol = colLetter(headers.length);
+  const endCol = colLetter(headers.length + toAdd.length - 1);
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!${startCol}1:${endCol}1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [toAdd] },
+  });
+
+  return [...headers, ...toAdd];
+}
+
+// Menulis seluruh baris header (baris 1). Dipakai saat menginisialisasi
+// tab Order List yang masih kosong.
+export async function writeHeaderRow(sheetName, headers) {
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const endCol = colLetter(headers.length - 1);
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A1:${endCol}1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [headers] },
+  });
+}
