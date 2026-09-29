@@ -3,14 +3,22 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X, ChevronDown, Loader2, Search } from "lucide-react";
-import { isoToIndonesian, indonesianToIso, combineTimeRange } from "@/lib/format";
+import {
+  isoToIndonesian,
+  indonesianToIso,
+  combineTimeRange,
+  parseIndonesianDate,
+} from "@/lib/format";
 import {
   isDateHeader,
   isTimeHeader,
   isChoiceHeader,
+  isPaymentHeader,
+  isAddressHeader,
   extractDriveLink,
   parseTimeRange,
   EDITING_SINCE_HEADER,
+  LAST_UPDATE_HEADER,
   isEditingStatus,
   parseSheetDate,
   daysSince,
@@ -44,6 +52,27 @@ const STATUS_COLORS = [
 // Tenggat editing 7 hari: hari ke-0 ditampilkan "-7 hari", hari ke-6 "-1 hari",
 // setelah itu "0 hari" (waktu habis).
 const EDITING_DEADLINE_DAYS = 7;
+
+// ---- Helper filter rentang tanggal (pola sama dengan TransactionList) ----
+// "yyyy-mm-dd" -> Date pukul 00:00 lokal (tanpa efek timezone UTC).
+function isoToDate(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
 
 function editingCountdownLabel(days) {
   const remaining = EDITING_DEADLINE_DAYS - days;
@@ -79,6 +108,66 @@ function StatusBadge({ value, editingDays }) {
           {editingCountdownLabel(editingDays)}
         </span>
       )}
+    </span>
+  );
+}
+
+// Badge payment berwarna: lunas/DP/selesai bayar → hijau, belum/down/cicil →
+// merah/amber, sisanya netral. Dicocokkan case-insensitive. (Pola sama dengan
+// StatusBadge, tapi tanpa countdown — payment tidak punya pelacak tanggal.)
+const PAID_WORDS = ["lunas", "paid", "full", "selesai bayar"];
+const PARTIAL_WORDS = ["dp", "deposit", "cicil", "termin"];
+const UNPAID_WORDS = ["belum", "unpaid", "down", " outstanding"];
+
+function PaymentBadge({ value }) {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  const lower = v.toLowerCase();
+
+  let cls = "bg-ink/10 text-ink/70";
+  if (PAID_WORDS.some((w) => lower.includes(w))) cls = "bg-income/10 text-income";
+  else if (PARTIAL_WORDS.some((w) => lower.includes(w))) cls = "bg-[#ffe5a0] text-ink";
+  else if (UNPAID_WORDS.some((w) => lower.includes(w))) cls = "bg-outcome/10 text-outcome";
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {v}
+    </span>
+  );
+}
+
+// URL Google Maps dari teks alamat bebas (query search, bukan koordinat).
+function mapsUrl(address) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    String(address).trim()
+  )}`;
+}
+
+// Chip "Maps ↗" untuk baris list — diklik langsung buka Maps di tab baru,
+// tanpa ikut membuka modal detail (sama perilakunya dengan DriveChip).
+function MapsChip({ address }) {
+  const open = (e) => {
+    e.stopPropagation();
+    window.open(mapsUrl(address), "_blank", "noopener,noreferrer");
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title="Buka di Google Maps"
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open(e);
+        }
+      }}
+    >
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#c6dbe1] px-2.5 py-1 text-xs font-medium text-ink hover:opacity-80">
+        Maps ↗
+      </span>
     </span>
   );
 }
@@ -123,8 +212,17 @@ function DriveInput({ value, onChange }) {
     <div>
       <label className="block text-xs text-ink/50 mb-1">Drive Files</label>
       {url && (
-        <div className="mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <DriveChip raw={url} />
+          {/* Tombol langsung ke link — satu klik membuka Drive di tab baru. */}
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-ink/60 hover:border-wine hover:text-wine"
+          >
+            Buka link ↗
+          </a>
         </div>
       )}
       <input
@@ -221,7 +319,7 @@ function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
         <form onSubmit={handleSave} className="space-y-3">
           {headers.map((h) => {
             // Kolom pelacak tidak diedit manual — diatur otomatis oleh API.
-            if (h === EDITING_SINCE_HEADER) return null;
+            if (h === EDITING_SINCE_HEADER || h === LAST_UPDATE_HEADER) return null;
 
             if (isTimeHeader(h)) {
               const t = timeValues[h] || { from: "", to: "" };
@@ -278,6 +376,56 @@ function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
               );
             }
 
+            // Kolom alamat: di bawah input teks ada tombol buka lokasi di
+            // Google Maps (alamat di-encode ke query URL maps.google.com).
+            if (isAddressHeader(h) && String(values[h] || "").trim()) {
+              return (
+                <div key={h}>
+                  <label className="block text-xs text-ink/50 mb-1">{h}</label>
+                  <input
+                    type="text"
+                    value={values[h] || ""}
+                    onChange={(e) => updateField(h, e.target.value)}
+                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm focus:outline-none focus:border-wine"
+                  />
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      String(values[h]).trim()
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-wine hover:underline"
+                  >
+                    Buka di Maps ↗
+                  </a>
+                </div>
+              );
+            }
+
+            // Kolom drive tanpa kata "drive" di nama (mis. "Link Files") tetap
+            // dapat tombol buka link kalau isinya mengandung URL Google Drive.
+            if (extractDriveLink(values[h])) {
+              return (
+                <div key={h}>
+                  <label className="block text-xs text-ink/50 mb-1">{h}</label>
+                  <input
+                    type="text"
+                    value={values[h] || ""}
+                    onChange={(e) => updateField(h, e.target.value)}
+                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm focus:outline-none focus:border-wine"
+                  />
+                  <a
+                    href={extractDriveLink(values[h])}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-wine hover:underline"
+                  >
+                    Buka link ↗
+                  </a>
+                </div>
+              );
+            }
+
             return (
               <div key={h}>
                 <label className="block text-xs text-ink/50 mb-1">{h}</label>
@@ -320,12 +468,18 @@ export default function OrderList({ headers = [], rows = [] }) {
   const [selected, setSelected] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [query, setQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState(""); // yyyy-mm-dd
+  const [dateTo, setDateTo] = useState(""); // yyyy-mm-dd
+  const [showDateFilter, setShowDateFilter] = useState(false);
 
   const statusH = headers.find((h) => h.toLowerCase() === "status");
   const labelH = pickLabelHeader(headers);
   const dateH = headers.find(isDateHeader);
   const timeH = headers.find(isTimeHeader);
   const driveH = headers.find((h) => h.toLowerCase().includes("drive"));
+  const paymentH = headers.find(isPaymentHeader);
+  const addressH = headers.find(isAddressHeader);
+  const lastUpdateH = headers.find((h) => h === LAST_UPDATE_HEADER);
 
   // Teks skunder di list: kolom lain selain yang sudah tampil, maksimal 3
   // biar baris list tetap ringkas. Nama tidak diulang di sini (sudah di judul).
@@ -337,6 +491,8 @@ export default function OrderList({ headers = [], rows = [] }) {
         h !== timeH &&
         h !== statusH &&
         h !== driveH &&
+        h !== paymentH &&
+        h !== lastUpdateH &&
         h !== EDITING_SINCE_HEADER
     )
     .slice(0, 3);
@@ -379,14 +535,45 @@ export default function OrderList({ headers = [], rows = [] }) {
     return map;
   }, [rows, statusH]);
 
+  // Quick range: n hari terakhir (hari ini - (n-1) s/d hari ini), format yyyy-mm-dd.
+  const setQuickRange = (days) => {
+    const today = startOfDay(new Date());
+    const from = new Date(today);
+    from.setDate(from.getDate() - (days - 1));
+    const fmt = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+    setDateFrom(fmt(from));
+    setDateTo(fmt(today));
+  };
+
+  const resetDateFilter = () => {
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const hasDateFilter = Boolean(dateFrom || dateTo);
+
   // Filter + search + urutan: yang berstatus editing paling atas
   // (diurutkan dari umur editing terlama), sisanya mengikuti urutan sheet.
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const from = dateFrom ? startOfDay(isoToDate(dateFrom)) : null;
+    const to = dateTo ? endOfDay(isoToDate(dateTo)) : null;
+
     let list = rows.filter((r) => {
       if (statusFilter) {
         const v = String(r[statusH] || "").trim();
         if (v !== statusFilter) return false;
+      }
+      if (from || to) {
+        const tgl = dateH ? parseIndonesianDate(r[dateH]) : null;
+        if (!tgl) return false; // baris tanpa tanggal valid tidak lolos filter tanggal
+        if (from && tgl < from) return false;
+        if (to && tgl > to) return false;
       }
       if (q) {
         const hay = headers
@@ -412,7 +599,7 @@ export default function OrderList({ headers = [], rows = [] }) {
     });
 
     return list;
-  }, [rows, headers, statusH, statusFilter, query, editingDaysByRow]);
+  }, [rows, headers, statusH, statusFilter, query, dateH, dateFrom, dateTo, editingDaysByRow]);
 
   if (headers.length === 0) {
     return (
@@ -470,7 +657,63 @@ export default function OrderList({ headers = [], rows = [] }) {
             className="w-full rounded-lg border border-line bg-paper pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-wine"
           />
         </div>
+        {/* Toggle filter rentang tanggal — pola sama dengan Pembukuan */}
+        <button
+          type="button"
+          onClick={() => setShowDateFilter((v) => !v)}
+          className={`shrink-0 rounded-lg border px-3 py-2 text-sm transition-colors ${
+            hasDateFilter
+              ? "border-wine/40 bg-wine/5 text-wine"
+              : "border-line bg-paper text-ink/60 hover:text-ink"
+          }`}
+        >
+          📅{hasDateFilter ? " •" : ""}
+        </button>
       </div>
+
+      {/* Panel filter tanggal (dari–sampai + quick range) */}
+      {showDateFilter && (
+        <div className="mb-3 rounded-xl border border-line bg-paper p-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="rounded-lg border border-line px-2 py-1.5 text-sm outline-none focus:border-wine"
+            />
+            <span className="text-xs text-ink/40">s/d</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="rounded-lg border border-line px-2 py-1.5 text-sm outline-none focus:border-wine"
+            />
+            {hasDateFilter && (
+              <button
+                type="button"
+                onClick={resetDateFilter}
+                className="text-xs text-ink/50 hover:text-ink underline underline-offset-2 ml-1"
+              >
+                bersihkan
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[1, 7, 30].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setQuickRange(n)}
+                className="rounded-full border border-line px-3 py-1 text-xs text-ink/60 hover:bg-ink/5"
+              >
+                {n === 1 ? "Hari ini" : `${n} hari`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ul className="divide-y divide-line">
         {visibleRows.length === 0 && (
@@ -491,6 +734,13 @@ export default function OrderList({ headers = [], rows = [] }) {
                   {statusH && (
                     <StatusBadge value={r[statusH]} editingDays={editingDaysByRow[r._row] ?? null} />
                   )}
+                  {paymentH && <PaymentBadge value={r[paymentH]} />}
+                  {/* Tanggal terakhir diubah, di samping kondisi payment. */}
+                  {lastUpdateH && r[lastUpdateH] && (
+                    <span className="text-xs text-ink/30 tabular-nums whitespace-nowrap">
+                      · {String(r[lastUpdateH])}
+                    </span>
+                  )}
                 </div>
                 {/* Baris sekunder: tanggal, jam, info lain — tanpa nama */}
                 <p className="text-xs text-ink/40 truncate">
@@ -500,7 +750,30 @@ export default function OrderList({ headers = [], rows = [] }) {
                 </p>
               </div>
               <span className="flex items-center gap-2 shrink-0">
-                {driveH && <DriveChip raw={r[driveH]} />}
+                {/* Chip maps & drive diklik langsung — jangan ikut buka modal. */}
+                {addressH && String(r[addressH] || "").trim() && (
+                  <MapsChip address={r[addressH]} />
+                )}
+                {driveH && extractDriveLink(r[driveH]) && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Buka Google Drive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(extractDriveLink(r[driveH]), "_blank", "noopener,noreferrer");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(extractDriveLink(r[driveH]), "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                  >
+                    <DriveChip raw={r[driveH]} />
+                  </span>
+                )}
                 <Pencil
                   size={15}
                   className="text-ink/25 group-hover:text-wine transition-colors"

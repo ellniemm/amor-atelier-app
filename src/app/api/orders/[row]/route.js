@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { readSheet, updateRow, appendMissingHeaders } from "@/lib/googleSheets";
 import {
   EDITING_SINCE_HEADER,
+  LAST_UPDATE_HEADER,
   isEditingStatus,
   todayIndonesian,
 } from "@/lib/sheetFields";
@@ -31,11 +32,17 @@ export async function PUT(req, { params }) {
 
     let { headers } = await readSheet(SHEET);
 
-    // Kolom "Editing Since" dibuat otomatis di sheet kalau belum ada.
-    const missing = [EDITING_SINCE_HEADER].filter((h) => !headers.includes(h));
+    // Kolom pelacak ("Editing Since", "Last Update") dibuat otomatis di sheet
+    // kalau belum ada.
+    const missing = [EDITING_SINCE_HEADER, LAST_UPDATE_HEADER].filter(
+      (h) => !headers.includes(h)
+    );
     if (missing.length > 0) {
       headers = await appendMissingHeaders(SHEET, headers, missing);
     }
+
+    // Catat kapan baris ini terakhir diubah dari app (tanggal saja).
+    values[LAST_UPDATE_HEADER] = todayIndonesian();
 
     // Sinkron kolom pelacak dengan perubahan status:
     // - status menjadi editing (dan belum ada tanggalnya) → catat hari ini

@@ -23,15 +23,48 @@ export function isTimeHeader(h) {
 
 // Kolom dengan pilihan tetap → dropdown. Opsi diambil dari data sheet
 // (nilai unik yang sudah pernah dipakai), sehingga selalu sesuai sheet.
+// Termasuk kolom payment supaya nilainya konsisten (dropdown, bukan teks bebas).
 export function isChoiceHeader(h) {
   const lower = h.toLowerCase();
-  return lower === "status" || lower.includes("package") || lower.includes("paket");
+  return (
+    lower === "status" ||
+    lower.includes("package") ||
+    lower.includes("paket") ||
+    isPaymentHeader(h)
+  );
+}
+
+// Kolom payment: "Payment", "Pembayaran", "Status Bayar", dst.
+// Kata "status" saja tidak cukup karena bisa bentrok dengan kolom Status utama.
+export function isPaymentHeader(h) {
+  const lower = h.toLowerCase();
+  return (
+    (lower.includes("payment") || lower.includes("bayar")) &&
+    !lower.includes("deadline") &&
+    !lower.includes("date") &&
+    !lower.includes("tanggal")
+  );
+}
+
+// Kolom alamat: "Address", "Alamat", "Lokasi", "Location" — dapat tombol
+// buka lokasi di Google Maps.
+export function isAddressHeader(h) {
+  const lower = h.toLowerCase();
+  return (
+    lower.includes("alamat") ||
+    lower.includes("address") ||
+    lower.includes("lokasi") ||
+    lower.includes("location")
+  );
 }
 
 // Ambil link Google Drive pertama dari teks bebas (mis. isi sel sheet
-// berisi URL + label). Mengembalikan "" kalau tidak ada.
+// berisi URL + label). Menerima link drive.google.com maupun folder/docs
+// docs.google.com. Mengembalikan "" kalau tidak ada.
 export function extractDriveLink(raw) {
-  const m = String(raw || "").match(/https:\/\/drive\.google\.com[^\s,;]+/);
+  const m = String(raw || "").match(
+    /https:\/\/(?:drive|docs)\.google\.com[^\s,;]+/
+  );
   return m ? m[0] : "";
 }
 
@@ -50,6 +83,10 @@ export function parseTimeRange(raw) {
 // Nama kolom pelacak sejak kapan pesanan berstatus "editing".
 // Kolom ini dibuat otomatis di sheet saat app menulis header.
 export const EDITING_SINCE_HEADER = "Editing Since";
+
+// Kolom pelacak kapan terakhir baris pesanan diubah dari app.
+// Dibuat & diisi otomatis oleh API — tidak diedit manual.
+export const LAST_UPDATE_HEADER = "Last Update";
 
 // Cek apakah nilai status termasuk keluarga "editing"
 // (editing, edit, revisi, revision, dst.).
