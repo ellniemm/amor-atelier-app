@@ -80,6 +80,32 @@ export function parseTimeRange(raw) {
   return { from: norm(m[1]), to: norm(m[2]) };
 }
 
+// Header utama untuk judul list pesanan: kolom "Nama" (persis), lalu yang
+// mengandung "nama", lalu "name"; fallback kolom teks pertama non-tanggal.
+export function pickLabelHeader(headers) {
+  const nama =
+    headers.find((h) => h.toLowerCase() === "nama") ||
+    headers.find((h) => h.toLowerCase().includes("nama")) ||
+    headers.find((h) => h.toLowerCase() === "name");
+  if (nama) return nama;
+  return headers.find((h) => !isDateHeader(h) && !isTimeHeader(h)) || headers[0];
+}
+
+// Keluarga status "selesai" dan "batal" — dipakai badge status dan filter
+// agenda (pesanan selesai/batal tidak masuk upcoming).
+const DONE_WORDS = ["selesai", "done", "complete", "finished"];
+const CANCEL_WORDS = ["batal", "cancel", "gagal"];
+
+export function isDoneStatus(value) {
+  const lower = String(value || "").trim().toLowerCase();
+  return DONE_WORDS.some((w) => lower.includes(w));
+}
+
+export function isCancelStatus(value) {
+  const lower = String(value || "").trim().toLowerCase();
+  return CANCEL_WORDS.some((w) => lower.includes(w));
+}
+
 // Nama kolom pelacak sejak kapan pesanan berstatus "editing".
 // Kolom ini dibuat otomatis di sheet saat app menulis header.
 export const EDITING_SINCE_HEADER = "Editing Since";
@@ -95,6 +121,15 @@ export function isEditingStatus(value) {
   return ["editing", "edit", "revisi", "revision", "in editing", "on editing"].some(
     (w) => lower === w || lower.startsWith(w)
   );
+}
+
+// Tenggat editing 7 hari: hari ke-0 ditampilkan "-7 hari", hari ke-6 "-1 hari",
+// setelah itu "0 hari" (waktu habis). Dipakai badge status & agenda dashboard.
+export const EDITING_DEADLINE_DAYS = 7;
+
+export function editingCountdownLabel(days) {
+  const remaining = EDITING_DEADLINE_DAYS - days;
+  return remaining > 0 ? `-${remaining} hari` : "0 hari";
 }
 
 // Parse tanggal dari sheet (dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, yyyy/mm/dd,

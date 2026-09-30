@@ -22,36 +22,11 @@ import {
   isEditingStatus,
   parseSheetDate,
   daysSince,
+  pickLabelHeader,
 } from "@/lib/sheetFields";
+import { StatusBadge, PaymentBadge } from "./Badges";
 import { DriveChip } from "./OrderForm";
 import DateField from "./DateField";
-
-// Label singkat yang ditampilkan di list. Prioritas: kolom "Nama" (sesuai
-// nama kolom di sheet), lalu kolom teks pertama.
-function pickLabelHeader(headers) {
-  const nama =
-    headers.find((h) => h.toLowerCase() === "nama") ||
-    headers.find((h) => h.toLowerCase().includes("nama")) ||
-    headers.find((h) => h.toLowerCase() === "name");
-  if (nama) return nama;
-  return headers.find((h) => !isDateHeader(h) && !isTimeHeader(h)) || headers[0];
-}
-
-// Badge status dengan warna: editing → wine + countdown, selesai/done →
-// hijau, batal/cancel → merah, sisanya netral. Status spesifik punya warna
-// sendiri sesuai permintaan (dicocokkan case-insensitive).
-const DONE_WORDS = ["selesai", "done", "complete", "finished"];
-const CANCEL_WORDS = ["batal", "cancel", "gagal"];
-
-const STATUS_COLORS = [
-  { match: "selecting photo", cls: "bg-[#c6dbe1] text-ink" },
-  { match: "ongoing", cls: "bg-[#bfe1f6] text-ink" },
-  { match: "completed photoshoot", cls: "bg-[#ffe5a0] text-ink" },
-];
-
-// Tenggat editing 7 hari: hari ke-0 ditampilkan "-7 hari", hari ke-6 "-1 hari",
-// setelah itu "0 hari" (waktu habis).
-const EDITING_DEADLINE_DAYS = 7;
 
 // ---- Helper filter rentang tanggal (pola sama dengan TransactionList) ----
 // "yyyy-mm-dd" -> Date pukul 00:00 lokal (tanpa efek timezone UTC).
@@ -72,70 +47,6 @@ function endOfDay(d) {
   const x = new Date(d);
   x.setHours(23, 59, 59, 999);
   return x;
-}
-
-function editingCountdownLabel(days) {
-  const remaining = EDITING_DEADLINE_DAYS - days;
-  return remaining > 0 ? `-${remaining} hari` : "0 hari";
-}
-
-function StatusBadge({ value, editingDays }) {
-  const v = String(value || "").trim();
-  if (!v) return null;
-  const lower = v.toLowerCase();
-  const isEditing = isEditingStatus(v);
-  const isDone = DONE_WORDS.some((w) => lower.includes(w));
-  const isCancel = CANCEL_WORDS.some((w) => lower.includes(w));
-
-  const specific = STATUS_COLORS.find((s) => lower.includes(s.match));
-  const cls = specific
-    ? specific.cls
-    : isEditing
-      ? "bg-wine/10 text-wine"
-      : isDone
-        ? "bg-income/10 text-income"
-        : isCancel
-          ? "bg-outcome/10 text-outcome"
-          : "bg-wine/10 text-wine";
-
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-        {v}
-      </span>
-      {isEditing && editingDays !== null && (
-        <span className="text-xs text-ink/40 tabular-nums">
-          {editingCountdownLabel(editingDays)}
-        </span>
-      )}
-    </span>
-  );
-}
-
-// Badge payment berwarna: lunas/DP/selesai bayar → hijau, belum/down/cicil →
-// merah/amber, sisanya netral. Dicocokkan case-insensitive. (Pola sama dengan
-// StatusBadge, tapi tanpa countdown — payment tidak punya pelacak tanggal.)
-const PAID_WORDS = ["lunas", "paid", "full", "selesai bayar"];
-const PARTIAL_WORDS = ["dp", "deposit", "cicil", "termin"];
-const UNPAID_WORDS = ["belum", "unpaid", "down", " outstanding"];
-
-function PaymentBadge({ value }) {
-  const v = String(value || "").trim();
-  if (!v) return null;
-  const lower = v.toLowerCase();
-
-  let cls = "bg-ink/10 text-ink/70";
-  if (PAID_WORDS.some((w) => lower.includes(w))) cls = "bg-income/10 text-income";
-  else if (PARTIAL_WORDS.some((w) => lower.includes(w))) cls = "bg-[#ffe5a0] text-ink";
-  else if (UNPAID_WORDS.some((w) => lower.includes(w))) cls = "bg-outcome/10 text-outcome";
-
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
-    >
-      {v}
-    </span>
-  );
 }
 
 // URL Google Maps dari teks alamat bebas (query search, bukan koordinat).

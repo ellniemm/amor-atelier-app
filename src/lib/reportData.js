@@ -1,7 +1,19 @@
 import { readSheet, matchHeader } from "./googleSheets";
 import { parseIndonesianDate } from "./format";
+import {
+  isDateHeader,
+  isTimeHeader,
+  pickLabelHeader,
+  EDITING_SINCE_HEADER,
+  isEditingStatus,
+  isDoneStatus,
+  isCancelStatus,
+  parseSheetDate,
+  daysSince,
+} from "./sheetFields";
 
 const SHEET = process.env.SHEET_TAB_PEMBUKUAN || "Pembukuan";
+const SHEET_ORDERS = process.env.SHEET_TAB_ORDERS || "Order List";
 
 export async function getReportData() {
   const { headers, rows } = await readSheet(SHEET);
@@ -81,4 +93,77 @@ export async function getReportData() {
     recent,
     transactions,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Agenda pesanan untuk dashboard: upcoming order dalam 1 minggu + daftar
+// editing yang harus segera dituntaskan (tenggat 7 hari sejak Editing Since).
+// ---------------------------------------------------------------------------
+export async function getOrderAgenda() {
+  const { headers, rows } = await readSheet(SHEET_ORDERS);
+
+  if (headers.length === 0) {
+    return { upcoming: [], editing: [] };
+  }
+
+  const labelH = pickLabelHeader(headers);
+  const statusH = headers.find((h) => h.toLowerCase() === "status");
+  // Kolom tanggal "acara" = kolom tanggal pertama di sheet (bukan Editing
+  // Since/Last Update — kolom pelacak itu berformat dd/mm/yyyy juga, tapi
+  // urutannya selalu setelah kolom tanggal acara di sheet Order List).
+  const dateH = headers.find(isDateHeader);
+  const timeH = headers.find(isTimeHeader);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const horizon = new Date(today);
+  horizon.setDate(horizon.getDate() + 7);
+
+  const editing = [];
+  const upcoming = [];
+
+  for (const r of rows) {
+    const status = statusH ? String(r[statusH] || "").trim() : "";
+    const done = isDoneStatus(status);
+    const cancel = isCancelStatus(status);
+
+    // Daftar editing: pesanan yang masih diedit, diurutkan dari yang paling
+    // dekat/lewat tenggat (umur editing terlama dulu).
+    if (statusH && isEditingStatus(status)) {
+      const since = parseSheetDate(r[EDITING_SINCE_HEADER]);
+      const days = since ? daysSince(since) : null;
+      editing.push({
+        _row: r._row,
+        label: String(r[labelH] || "-").trim() || "-",
+        status,
+        days,
+      });
+      continue;
+    }
+
+    // Upcoming: pesanan dengan tanggal acara dalam 7 hari ke depan (hari ini
+    // termasuk). Yang selesai/batal tidak perlu diingatkan lagi.
+    if (done || cancel || !dateH) continue;
+    const tgl = parseSheetDate(r[dateH]);
+    if (!tgl) continue;
+    tgl.setHours(0, 0, 0, 0);
+    if (tgl < today || tgl > horizon) continue;
+
+    const daysAway = Math.round((tgl.getTime() - today.getTime()) / 86400000);
+    upcoming.push({
+      _row: r._row,
+      label: String(r[labelH] || "-").trim() || "-",
+      status,
+      dateStr: dateH ? String(r[dateH] || "").trim() : "",
+      timeStr: timeH ? String(r[timeH] || "").trim() : "",
+      daysAway,
+    });
+  }
+
+  // Upcoming diurutkan berdasarkan tanggal terdekat.
+  upcoming.sort((a, b) => a.daysAway - b.daysAway);
+  // Editing diurutkan dari umur terlama (paling mendesak).
+  editing.sort((a, b) => (b.days ?? -1) - (a.days ?? -1));
+
+  return { upcoming, editing };
 }

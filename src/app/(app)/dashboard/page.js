@@ -1,17 +1,27 @@
-import { getReportData } from "@/lib/reportData";
+import { getReportData, getOrderAgenda } from "@/lib/reportData";
 import { formatRupiah } from "@/lib/format";
 import WeeklyBarChart from "@/components/WeeklyBarChart";
+import OrderAgenda from "@/components/OrderAgenda";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   let data = null;
+  let agenda = { upcoming: [], editing: [] };
   let loadError = null;
 
   try {
     data = await getReportData();
   } catch (err) {
     loadError = err.message;
+  }
+
+  // Agenda pesanan diambil terpisah — kalau sheet Order gagal dibaca,
+  // bagian pembukuan tetap tampil (dan sebaliknya).
+  try {
+    agenda = await getOrderAgenda();
+  } catch (err) {
+    console.error("Gagal memuat agenda pesanan:", err.message);
   }
 
   if (loadError) {
@@ -49,28 +59,8 @@ export default async function DashboardPage() {
       </section>
 
       <section>
-        <h2 className="font-display text-lg mb-3">Transaksi terbaru</h2>
-        <ul className="divide-y divide-line">
-          {data.recent.length === 0 && (
-            <li className="py-4 text-sm text-ink/50">Belum ada transaksi.</li>
-          )}
-          {data.recent.map((r, i) => (
-            <li key={i} className="py-3 flex items-center justify-between">
-              <div>
-                <p className="text-sm">{r.keterangan || r.nama || "-"}</p>
-                <p className="text-xs text-ink/40">{r.tanggal}</p>
-              </div>
-              <p
-                className={`tabular-nums text-sm font-medium ${
-                  r.jenis === "Income" ? "text-income" : "text-outcome"
-                }`}
-              >
-                {r.jenis === "Income" ? "+" : "-"}
-                {formatRupiah(r.nominal)}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <h2 className="font-display text-lg mb-3">Agenda pesanan</h2>
+        <OrderAgenda upcoming={agenda.upcoming} editing={agenda.editing} />
       </section>
     </div>
   );
