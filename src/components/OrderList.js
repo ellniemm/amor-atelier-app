@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X, ChevronDown, Loader2, Search } from "lucide-react";
 import {
@@ -27,6 +27,7 @@ import {
 import { StatusBadge, PaymentBadge } from "./Badges";
 import { DriveChip } from "./OrderForm";
 import DateField from "./DateField";
+import Pagination, { PAGE_SIZE } from "./Pagination";
 
 // ---- Helper filter rentang tanggal (pola sama dengan TransactionList) ----
 // "yyyy-mm-dd" -> Date pukul 00:00 lokal (tanpa efek timezone UTC).
@@ -382,6 +383,12 @@ export default function OrderList({ headers = [], rows = [] }) {
   const [dateFrom, setDateFrom] = useState(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState(""); // yyyy-mm-dd
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // Kembali ke halaman 1 setiap kali filter/search berubah.
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, query, dateFrom, dateTo]);
 
   const statusH = headers.find((h) => h.toLowerCase() === "status");
   const labelH = pickLabelHeader(headers);
@@ -522,6 +529,11 @@ export default function OrderList({ headers = [], rows = [] }) {
 
   const editingCount = Object.keys(editingDaysByRow).length;
 
+  // ---- Pagination: 15 baris per halaman ----
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = visibleRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -632,7 +644,7 @@ export default function OrderList({ headers = [], rows = [] }) {
             {rows.length === 0 ? "Belum ada pesanan." : "Tidak ada yang cocok."}
           </li>
         )}
-        {visibleRows.map((r, i) => (
+        {pagedRows.map((r, i) => (
           <li key={r._row || i}>
             <button
               type="button"
@@ -694,6 +706,14 @@ export default function OrderList({ headers = [], rows = [] }) {
           </li>
         ))}
       </ul>
+
+      <Pagination
+        page={safePage}
+        totalPages={totalPages}
+        totalItems={visibleRows.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
       {selected && (
         <OrderDetailModal

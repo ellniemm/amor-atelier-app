@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { formatRupiah, parseIndonesianDate, todayIso } from "@/lib/format";
+import Pagination, { PAGE_SIZE } from "./Pagination";
 
 // Duplikat dari matchHeader di lib/googleSheets.js — tidak boleh import dari
 // sana di komponen client karena menarik paket `googleapis` ke bundle browser.
@@ -64,6 +65,13 @@ export default function TransactionList({ headers, rows }) {
   const [dateFrom, setDateFrom] = useState(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState(""); // yyyy-mm-dd
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // Kembali ke halaman 1 setiap kali filter berubah, supaya tidak stuck di
+  // halaman kosong.
+  useEffect(() => {
+    setPage(1);
+  }, [jenis, owner, search, dateFrom, dateTo]);
 
   const owners = useMemo(() => {
     if (!namaH) return [];
@@ -126,6 +134,11 @@ export default function TransactionList({ headers, rows }) {
 
   const hasActiveFilters =
     jenis !== "all" || owner !== "all" || search || dateFrom || dateTo;
+
+  // ---- Pagination: 15 baris per halaman ----
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const activeFilterCount =
     (jenis !== "all" ? 1 : 0) +
@@ -337,7 +350,7 @@ export default function TransactionList({ headers, rows }) {
               : "Belum ada transaksi."}
           </li>
         )}
-        {filtered.map((r, i) => (
+        {pagedRows.map((r, i) => (
           <li key={i} className="py-3 flex items-center justify-between">
             <div>
               <p className="text-sm">{ketH ? r[ketH] : namaH ? r[namaH] : "-"}</p>
@@ -357,6 +370,14 @@ export default function TransactionList({ headers, rows }) {
           </li>
         ))}
       </ul>
+
+      <Pagination
+        page={safePage}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

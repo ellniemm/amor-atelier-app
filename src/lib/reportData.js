@@ -114,6 +114,12 @@ export async function getOrderAgenda() {
   const dateH = headers.find(isDateHeader);
   const timeH = headers.find(isTimeHeader);
 
+  // Hitungan status untuk kartu ringkasan dashboard (total semua pesanan,
+  // bukan hanya yang masuk agenda).
+  let ongoingCount = 0;
+  let editingCount = 0;
+  let completeCount = 0;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const horizon = new Date(today);
@@ -126,6 +132,15 @@ export async function getOrderAgenda() {
     const status = statusH ? String(r[statusH] || "").trim() : "";
     const done = isDoneStatus(status);
     const cancel = isCancelStatus(status);
+
+    // Hitung per keluarga status (case-insensitive): ongoing → editing →
+    // complete. Selesai/batal dianggap complete; "selecting photo" tidak
+    // masuk kelompok manapun.
+    if (statusH) {
+      if (isEditingStatus(status)) editingCount++;
+      else if (done || cancel) completeCount++;
+      else if (status.toLowerCase().includes("ongoing")) ongoingCount++;
+    }
 
     // Daftar editing: pesanan yang masih diedit, diurutkan dari yang paling
     // dekat/lewat tenggat (umur editing terlama dulu).
@@ -165,5 +180,5 @@ export async function getOrderAgenda() {
   // Editing diurutkan dari umur terlama (paling mendesak).
   editing.sort((a, b) => (b.days ?? -1) - (a.days ?? -1));
 
-  return { upcoming, editing };
+  return { upcoming, editing, counts: { ongoing: ongoingCount, editing: editingCount, complete: completeCount } };
 }
