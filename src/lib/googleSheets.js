@@ -34,7 +34,12 @@ function getSheetsClient() {
 // Catatan: cache ini per-process (in-memory). Di serverless (Vercel), tiap
 // instance lambda punya cache sendiri — tetap efektif memangkas kuota.
 
-const CACHE_TTL_MS = 60 * 1000; // 1 menit
+// Default 30 detik — selaras dengan interval sinkronisasi klien
+// (NEXT_PUBLIC_SYNC_INTERVAL_MS) supaya perubahan dari user lain tampil
+// dalam hitungan puluh detik, sementara baca nyata ke Google Sheets tetap
+// maksimal 2x/menit per process. Bisa dinaikkan lewat env
+// SHEETS_CACHE_TTL_MS kalau kuota read lebih diprioritaskan.
+const CACHE_TTL_MS = Number(process.env.SHEETS_CACHE_TTL_MS) || 30 * 1000;
 const cache = new Map(); // key -> { value, expiresAt }
 
 function cacheGet(key) {
@@ -109,7 +114,8 @@ async function withRetry(fn) {
 // Membaca satu tab/sheet, baris pertama dianggap header.
 // Mengembalikan { headers: string[], rows: object[] }.
 // Setiap row punya properti `_row` = nomor baris asli di spreadsheet.
-// Hasil di-cache 1 menit; ditulis ulang (di-invalidate) setiap kali ada tulis.
+// Hasil di-cache sesuai CACHE_TTL_MS (default 30 detik); di-invalidate
+// setiap kali ada tulis supaya data setelah edit/tambah langsung segar.
 export async function readSheet(sheetName) {
   const cached = getCachedRead(sheetName);
   if (cached) return cached;

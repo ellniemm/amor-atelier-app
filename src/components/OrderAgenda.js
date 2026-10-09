@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { StatusBadge } from "./Badges";
+import DateBlock from "./DateBlock";
 
 // Label agar: "Hari ini", "Besok", "3 hari lagi", "1 hari lewat", dst.
 function dayLabel(days) {
@@ -20,15 +21,16 @@ function dayChipCls(days) {
     : "bg-ink/5 text-ink/60";
 }
 
-function AgendaRow({ item, meta, chip, onOpen }) {
+function AgendaRow({ item, meta, chip, onOpen, dateBlock }) {
   return (
     <li>
       <button
         type="button"
         onClick={onOpen}
-        className="w-full text-left py-3 flex items-center justify-between gap-3 group"
+        className="w-full text-left py-3 flex items-center gap-3 group"
       >
-        <div className="min-w-0">
+        {dateBlock && <DateBlock raw={dateBlock} />}
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium truncate">{item.label}</p>
             {item.status && (
@@ -81,7 +83,9 @@ export default function OrderAgenda({ upcoming = [], editing = [] }) {
           <AgendaRow
             key={item._row}
             item={item}
-            meta={[item.dateStr, item.timeStr].filter(Boolean).join(" · ")}
+            // Tanggal tampil di blok kiri sendiri; keterangan baris cukup jam.
+            dateBlock={item.dateStr}
+            meta={item.timeStr}
             chip={
               <span
                 className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${dayChipCls(
@@ -105,6 +109,7 @@ export default function OrderAgenda({ upcoming = [], editing = [] }) {
           <AgendaRow
             key={item._row}
             item={item}
+            dateBlock={null}
             meta={
               item.days === null || item.days === undefined
                 ? "Mulai editing belum tercatat"

@@ -4,7 +4,14 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { isoToIndonesian, combineTimeRange } from "@/lib/format";
-import { isDateHeader, isTimeHeader, isChoiceHeader, extractDriveLink } from "./orderColumns";
+import {
+  isDateHeader,
+  isTimeHeader,
+  isChoiceHeader,
+  isFileUploadHeader,
+  extractDriveLink,
+  pickLabelHeader,
+} from "./orderColumns";
 import DateField from "./DateField";
 
 export function DriveChip({ raw }) {
@@ -27,6 +34,9 @@ export default function OrderForm({ headers, rows = [] }) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState({});
   const [timeValues, setTimeValues] = useState({});
+  // File yang dipilih per kolom upload (mis. Moodboard): header -> FileList.
+  const [files, setFiles] = useState({});
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -72,6 +82,30 @@ export default function OrderForm({ headers, rows = [] }) {
         payloadValues[h] = isDateHeader(h) && raw ? isoToIndonesian(raw) : raw;
       });
 
+      // Kolom upload file (mis. Moodboard): semua file dikirim sekalian ke
+      // /api/upload — di server, ≥2 foto (JPEG/PNG) otomatis digabung jadi
+      // 1 PDF dulu; PDF & file lain diupload apa adanya. Link hasilnya
+      // disimpan ke kolom sheet (satu baris per file kalau lebih dari satu).
+      for (const h of headers) {
+        if (!isFileUploadHeader(h)) continue;
+        const list = files[h];
+        if (!list || list.length === 0) continue;
+
+        setUploading(true);
+        const labelHeader = pickLabelHeader(headers);
+        const fd = new FormData();
+        for (const f of Array.from(list)) fd.append("files", f);
+        fd.append("prefix", String(payloadValues[labelHeader] || ""));
+
+        const upRes = await fetch("/api/upload", { method: "POST", body: fd });
+        const upData = await upRes.json();
+        if (!upRes.ok) {
+          throw new Error(`Gagal upload: ${upData.error || "coba lagi."}`);
+        }
+        payloadValues[h] = (upData.links || [upData.link].filter(Boolean)).join("\n");
+        setUploading(false);
+      }
+
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,12 +116,14 @@ export default function OrderForm({ headers, rows = [] }) {
 
       setValues({});
       setTimeValues({});
+      setFiles({});
       setOpen(false);
       router.refresh();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setUploading(false);
     }
   }
 
@@ -203,6 +239,39 @@ export default function OrderForm({ headers, rows = [] }) {
               );
             }
 
+            if (isFileUploadHeader(h)) {
+              const list = files[h];
+              return (
+                <div key={h}>
+                  <span className="block text-xs text-ink/50 mb-1">
+                    {h} <span className="text-ink/30">(upload ke Google Drive)</span>
+                  </span>
+                  <label className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2.5 text-sm cursor-pointer hover:border-wine focus-within:border-wine">
+                    <input
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      onChange={(e) =>
+                        setFiles((prev) => ({ ...prev, [h]: e.target.files }))
+                      }
+                    />
+                    <span className="text-ink/40">📎</span>
+                    {list && list.length > 0 ? (
+                      <span className="truncate">
+                        {Array.from(list)
+                          .map((f) => f.name)
+                          .join(", ")}
+                      </span>
+                    ) : (
+                      <span className="text-ink/40">
+                        Pilih file (bisa lebih dari satu)...
+                      </span>
+                    )}
+                  </label>
+                </div>
+              );
+            }
+
             return (
               <input
                 key={h}
@@ -230,7 +299,7 @@ export default function OrderForm({ headers, rows = [] }) {
               disabled={loading}
               className="flex-1 rounded-lg bg-wine text-paper py-2.5 text-sm font-medium disabled:opacity-60"
             >
-              {loading ? "Menyimpan..." : "Simpan"}
+              {uploading ? "Mengupload file..." : loading ? "Menyimpan..." : "Simpan"}
             </button>
           </div>
         </form>

@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import BottomNav from "@/components/BottomNav";
 import SignOutButton from "@/components/SignOutButton";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function AppLayout({ children }) {
   const session = await getServerSession(authOptions);
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }) {
         <SignOutButton />
       </header>
       <main className="px-5">{children}</main>
+      <AutoRefresh />
       <BottomNav />
     </div>
   );

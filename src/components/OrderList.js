@@ -15,6 +15,7 @@ import {
   isChoiceHeader,
   isPaymentHeader,
   isAddressHeader,
+  isFileUploadHeader,
   extractDriveLink,
   parseTimeRange,
   EDITING_SINCE_HEADER,
@@ -27,6 +28,7 @@ import {
 import { StatusBadge, PaymentBadge } from "./Badges";
 import { DriveChip } from "./OrderForm";
 import DateField from "./DateField";
+import DateBlock from "./DateBlock";
 import Pagination, { PAGE_SIZE } from "./Pagination";
 
 // ---- Helper filter rentang tanggal (pola sama dengan TransactionList) ----
@@ -148,7 +150,7 @@ function DriveInput({ value, onChange }) {
   );
 }
 
-function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
+function OrderDetailModal({ order, headers, choiceOptions, labelH, onClose }) {
   const router = useRouter();
   const [values, setValues] = useState(() => {
     const init = {};
@@ -165,6 +167,9 @@ function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
     });
     return init;
   });
+  // File moodboard baru yang dipilih (header -> FileList). Kosong = tidak
+  // ganti file, link lama di sel tetap dipertahankan.
+  const [files, setFiles] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -191,6 +196,27 @@ function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
         payloadValues[h] =
           isDateHeader(h) && values[h] ? isoToIndonesian(values[h]) : values[h] || "";
       });
+
+      // Kolom upload file (Moodboard): kalau user memilih file baru, kirim
+      // sekalian ke /api/upload — di server, ≥2 foto digabung jadi 1 PDF,
+      // PDF & file lain diupload apa adanya. Link menggantikan isi sel
+      // (file lamanya tetap ada di folder Drive, hanya tidak lagi tertaut).
+      for (const h of headers) {
+        if (!isFileUploadHeader(h)) continue;
+        const list = files[h];
+        if (!list || list.length === 0) continue;
+
+        const fd = new FormData();
+        for (const f of Array.from(list)) fd.append("files", f);
+        fd.append("prefix", String(order[labelH] || ""));
+
+        const upRes = await fetch("/api/upload", { method: "POST", body: fd });
+        const upData = await upRes.json();
+        if (!upRes.ok) {
+          throw new Error(`Gagal upload: ${upData.error || "coba lagi."}`);
+        }
+        payloadValues[h] = (upData.links || [upData.link].filter(Boolean)).join("\n");
+      }
 
       const res = await fetch(`/api/orders/${order._row}`, {
         method: "PUT",
@@ -279,6 +305,46 @@ function OrderDetailModal({ order, headers, choiceOptions, onClose }) {
                   onChange={(v) => updateField(h, v)}
                   options={choiceOptions[h]}
                 />
+              );
+            }
+
+            // Kolom moodboard: tampil sebagai file picker + chip link lama.
+            if (isFileUploadHeader(h)) {
+              const list = files[h];
+              const existing = extractDriveLink(values[h]);
+              return (
+                <div key={h}>
+                  <span className="block text-xs text-ink/50 mb-1">
+                    {h} <span className="text-ink/30">(upload ke Google Drive)</span>
+                  </span>
+                  {existing && (
+                    <div className="mb-2">
+                      <DriveChip raw={existing} />
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2.5 text-sm cursor-pointer hover:border-wine focus-within:border-wine">
+                    <input
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      onChange={(e) =>
+                        setFiles((prev) => ({ ...prev, [h]: e.target.files }))
+                      }
+                    />
+                    <span className="text-ink/40">📎</span>
+                    {list && list.length > 0 ? (
+                      <span className="truncate">
+                        {Array.from(list)
+                          .map((f) => f.name)
+                          .join(", ")}
+                      </span>
+                    ) : (
+                      <span className="text-ink/40">
+                        {existing ? "Ganti file..." : "Pilih file..."}
+                      </span>
+                    )}
+                  </label>
+                </div>
               );
             }
 
@@ -395,6 +461,7 @@ export default function OrderList({ headers = [], rows = [] }) {
   const dateH = headers.find(isDateHeader);
   const timeH = headers.find(isTimeHeader);
   const driveH = headers.find((h) => h.toLowerCase().includes("drive"));
+  const moodboardH = headers.find(isFileUploadHeader);
   const paymentH = headers.find(isPaymentHeader);
   const addressH = headers.find(isAddressHeader);
   const lastUpdateH = headers.find((h) => h === LAST_UPDATE_HEADER);
@@ -649,9 +716,11 @@ export default function OrderList({ headers = [], rows = [] }) {
             <button
               type="button"
               onClick={() => setSelected(r)}
-              className="w-full text-left py-3 flex items-center justify-between gap-3 group"
+              className="w-full text-left py-3 flex items-center gap-3 group"
             >
-              <div className="min-w-0">
+              {/* Tanggal acara tampil di blok kiri sendiri (angka + bulan). */}
+              {dateH && String(r[dateH] || "").trim() && <DateBlock raw={r[dateH]} />}
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm font-medium truncate">{r[labelH] || "-"}</p>
                   {statusH && (
@@ -665,9 +734,9 @@ export default function OrderList({ headers = [], rows = [] }) {
                     </span>
                   )}
                 </div>
-                {/* Baris sekunder: tanggal, jam, info lain — tanpa nama */}
+                {/* Baris sekunder: jam + info lain (tanggal sudah di blok kiri) */}
                 <p className="text-xs text-ink/40 truncate">
-                  {[dateH && r[dateH], timeH && r[timeH], ...subParts.map((h) => r[h])]
+                  {[timeH && r[timeH], ...subParts.map((h) => r[h])]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
@@ -697,6 +766,29 @@ export default function OrderList({ headers = [], rows = [] }) {
                     <DriveChip raw={r[driveH]} />
                   </span>
                 )}
+                {/* Tombol langsung ke moodboard (link upload) kalau ada. */}
+                {moodboardH && extractDriveLink(r[moodboardH]) && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Buka Moodboard"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(extractDriveLink(r[moodboardH]), "_blank", "noopener,noreferrer");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(extractDriveLink(r[moodboardH]), "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1 rounded-full bg-wine/10 text-wine px-2.5 py-1 text-xs font-medium hover:bg-wine/20">
+                      Moodboard ↗
+                    </span>
+                  </span>
+                )}
                 <Pencil
                   size={15}
                   className="text-ink/25 group-hover:text-wine transition-colors"
@@ -720,6 +812,7 @@ export default function OrderList({ headers = [], rows = [] }) {
           order={selected}
           headers={headers}
           choiceOptions={choiceOptions}
+          labelH={labelH}
           onClose={() => setSelected(null)}
         />
       )}

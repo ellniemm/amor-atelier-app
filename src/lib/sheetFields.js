@@ -46,6 +46,14 @@ export function isPaymentHeader(h) {
   );
 }
 
+// Kolom upload file: "Moodboard" (dan varian ejaannya) dirender sebagai
+// file picker di form. File diunggah ke folder Google Drive (env
+// GOOGLE_DRIVE_FOLDER_ID) dan link-nya otomatis disimpan ke sel sheet.
+export function isFileUploadHeader(h) {
+  const lower = h.toLowerCase().replace(/[\s_-]/g, "");
+  return lower.includes("moodboard");
+}
+
 // Kolom alamat: "Address", "Alamat", "Lokasi", "Location" — dapat tombol
 // buka lokasi di Google Maps.
 export function isAddressHeader(h) {
